@@ -169,7 +169,15 @@ class InfoStruct(object):
                  torch.mm(self.adjusted_weight[:, index_of_channel].view(-1, 1),
                           self.stack_op_for_weight[index_of_channel, :].view(1, -1))
 
-        new_weight = torch.mm(torch.inverse(self.adjust_matrix), new_aw)
+        # new_weight = torch.mm(torch.inverse(self.adjust_matrix), new_aw)
+        zero_back = torch.abs(torch.sign(torch.sum(self.adjust_matrix, dim=1)))
+        print(zero_back)
+        trans = torch.diag(zero_back).to_sparse(1).values()      # short
+
+        dezero_ad = torch.mm(torch.mm(trans, self.adjust_matrix), trans.t())
+        dezero_aw = torch.mm(trans, new_aw)
+        dezero_weight = torch.mm(torch.inverse(dezero_ad), dezero_aw)
+        new_weight = torch.mm(trans.t(), dezero_weight)
 
         if self.f_cls.dim == 4:
             self.weight[:, :, 0, 0] = new_weight

@@ -227,7 +227,7 @@ def main():
             # train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, 150)
             validate(val_loader, val_loader_len, model, criterion)
             manager.computer_score()
-            manager.prune_local(500)
+            manager.prune(20)
             manager.pruning_overview()
             validate(val_loader, val_loader_len, model, criterion)
             torch.save(model.state_dict(), args.ckp_out)
