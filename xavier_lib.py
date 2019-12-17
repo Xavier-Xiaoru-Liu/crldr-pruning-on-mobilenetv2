@@ -63,7 +63,8 @@ class InfoStruct(object):
         self.zero_variance_masked_zero = torch.sign(self.variance)
 
         # where 0 var compensate 1
-        self.zero_variance_masked_one = torch.nn.Parameter(torch.ones(self.channel_num, dtype=torch.double)).cuda() - \
+        self.zero_variance_masked_one = torch.nn.Parameter(torch.ones(self.channel_num, dtype=torch.double),
+                                                           requires_grad=False).cuda() - \
             self.zero_variance_masked_zero
         repaired_forward_cov = self.forward_cov + torch.diag(self.zero_variance_masked_one)
 
@@ -103,13 +104,13 @@ class InfoStruct(object):
         # this function first update [masks] in pre_forward_hook,
         # then update parameters in [bn module] or biases in the last layer
 
-        verify = int(torch.sum(self.pre_f_cls.mask - self.zero_variance_masked_zero.to(torch.float) * self.pre_f_cls.mask))
+        verify = int(torch.sum(self.pre_f_cls.read_data() - self.zero_variance_masked_zero.to(torch.float) * self.pre_f_cls.read_data()))
 
         if verify != 0:
 
             print('Number of more zero var channel: ', verify)
 
-            self.pre_f_cls.mask = self.zero_variance_masked_zero.to(torch.float)
+            self.pre_f_cls.load_data(self.zero_variance_masked_zero.to(torch.float))
 
             # print('remove activate: ', torch.sum(self.zero_variance_masked_one))
 
@@ -124,7 +125,7 @@ class InfoStruct(object):
 
     def minimum_score(self) -> [int, float]:
 
-        channel_mask = self.pre_f_cls.mask
+        channel_mask = self.pre_f_cls.read_data()
         for index in list(np.array(self.sorted_index.cpu())):
             index = int(index)
             if int(channel_mask[index]) != 0:
@@ -133,7 +134,7 @@ class InfoStruct(object):
     def minimum_var_score(self) -> [int, float, float]:
         # return the score of the minimum de-correlated variance
         # by this way, we can achieve better generality
-        channel_mask = self.pre_f_cls.mask
+        channel_mask = self.pre_f_cls.read_data()
 
         for index in list(np.array(self.sorted_alpha_index.cpu())):
             index = int(index)
@@ -142,8 +143,9 @@ class InfoStruct(object):
 
     def prune_then_modify(self, index_of_channel):
         # update [mask]
-        channel_mask = self.pre_f_cls.mask
+        channel_mask = self.pre_f_cls.read_data()
         channel_mask[index_of_channel] = 0
+        self.pre_f_cls.load_data(channel_mask)
 
         # update [bn]
         if self.f_cls.dim == 4:
@@ -179,8 +181,8 @@ class InfoStruct(object):
         self.forward_cov[:, index_of_channel] = 0
         self.forward_cov[index_of_channel, :] = 0
 
-        channel_masked_one = torch.nn.Parameter(torch.ones(self.channel_num, dtype=torch.float)).cuda() - \
-            channel_mask
+        channel_masked_one = torch.nn.Parameter(torch.ones(self.channel_num, dtype=torch.float),
+                                                requires_grad=False).cuda() - channel_mask
         repaired_forward_cov = self.forward_cov + torch.diag(channel_masked_one).to(torch.double)
 
         f_cov_inverse = repaired_forward_cov.inverse().to(torch.float)
@@ -202,8 +204,9 @@ class InfoStruct(object):
 
     def local_prune_then_modify(self, index_of_channel):
         # update [mask]
-        channel_mask = self.pre_f_cls.mask
+        channel_mask = self.pre_f_cls.read_data()
         channel_mask[index_of_channel] = 0
+        self.pre_f_cls.load_data(channel_mask)
 
         # update [bn]
         if self.f_cls.dim == 4:
@@ -225,7 +228,6 @@ class InfoStruct(object):
 
         new_weight = torch.squeeze(self.weight) - torch.mm(self.weight[:, index_of_channel].view(-1, 1),
                                                            self.stack_op_for_weight[index_of_channel, :].view(1, -1))
-
         if self.f_cls.dim == 4:
             self.weight[:, :, 0, 0] = new_weight
         else:
@@ -285,7 +287,7 @@ class InfoStruct(object):
 
     def query_channel_num(self):
 
-        channel_mask = self.pre_f_cls.mask
+        channel_mask = self.pre_f_cls.read_data()
 
         return int(torch.sum(channel_mask).cpu()), int(channel_mask.shape[0])
 
@@ -369,11 +371,12 @@ class PreForwardHook(object):
     def __init__(self, name, module, dim=4):
         self.name = name
         self.dim = dim
+        self.module = module
         if dim == 4:
             self.channel_num = module.in_channels
         elif dim == 2:
             self.channel_num = module.in_features
-        module.register_buffer('mask', torch.ones(self.channel_num))
+        module.register_parameter('mask', torch.nn.Parameter(torch.ones(self.channel_num), requires_grad=False))
 
     def __call__(self, module, inputs):
         if self.dim == 4:
@@ -383,6 +386,12 @@ class PreForwardHook(object):
             return torch.mul(inputs[0], module.mask)
         else:
             raise Exception
+
+    def read_data(self):
+        return self.module.mask.data
+
+    def load_data(self, data):
+        self.module.mask.data = data
 
 
 class StatisticManager(object):
