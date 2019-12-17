@@ -153,7 +153,10 @@ def main():
             model.features = torch.nn.DataParallel(model.features)
             model.cuda()
         else:
-            model = torch.nn.DataParallel(model).cuda()
+            if args.status == 'prune':
+                model = torch.nn.DataParallel(model, device_ids=[0]).cuda()
+            else:
+                model = torch.nn.DataParallel(model).cuda()
     else:
         model.cuda()
         model = torch.nn.parallel.DistributedDataParallel(model)
@@ -224,7 +227,7 @@ def main():
             # train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, 150)
             validate(val_loader, val_loader_len, model, criterion)
             manager.computer_score()
-            manager.prune_local(200)
+            manager.prune_local(500)
             manager.pruning_overview()
             validate(val_loader, val_loader_len, model, criterion)
             torch.save(model.state_dict(), args.ckp_out)
