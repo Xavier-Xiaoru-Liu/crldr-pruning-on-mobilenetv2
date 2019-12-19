@@ -227,11 +227,12 @@ def main():
             # train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, 150)
             validate(val_loader, val_loader_len, model, criterion)
             manager.computer_score()
-            manager.prune(20)
+            manager.prune(1500)
             manager.pruning_overview()
             validate(val_loader, val_loader_len, model, criterion)
             torch.save(model.state_dict(), args.ckp_out)
         elif args.status == 'train':
+            manager.pruning_overview()
             for i in range(30):
                 train(train_loader, train_loader_len, model, criterion, optimizer, i * 5)
             validate(val_loader, val_loader_len, model, criterion)

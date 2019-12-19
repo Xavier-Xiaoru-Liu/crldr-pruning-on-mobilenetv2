@@ -170,13 +170,20 @@ class InfoStruct(object):
                           self.stack_op_for_weight[index_of_channel, :].view(1, -1))
 
         # new_weight = torch.mm(torch.inverse(self.adjust_matrix), new_aw)
-        zero_back = torch.abs(torch.sign(torch.sum(self.adjust_matrix, dim=1)))
-        print(zero_back)
+        zero_back = torch.abs(torch.sign(torch.mean(self.adjust_matrix, dim=1)))
         trans = torch.diag(zero_back).to_sparse(1).values()      # short
 
-        dezero_ad = torch.mm(torch.mm(trans, self.adjust_matrix), trans.t())
+        zb2 = torch.abs(torch.sign(torch.mean(self.adjust_matrix, dim=0)))
+        trans2 = torch.diag(zb2).to_sparse(1).values()
+
+        dezero_ad = torch.mm(torch.mm(trans, self.adjust_matrix), trans2.t())
         dezero_aw = torch.mm(trans, new_aw)
-        dezero_weight = torch.mm(torch.inverse(dezero_ad), dezero_aw)
+        try:
+            dezero_weight = torch.mm(torch.inverse(dezero_ad), dezero_aw)
+        except:
+            import scipy.io as sio
+            sio.savemat('w.mat', {'f': dezero_ad})
+            raise Exception('save')
         new_weight = torch.mm(trans.t(), dezero_weight)
 
         if self.f_cls.dim == 4:
@@ -576,7 +583,7 @@ class StatisticManager(object):
 class MaskManager(object):
 
     def __init__(self):
-        pass
+        self.name_module = {}
 
     def __call__(self, model):
 
@@ -586,7 +593,23 @@ class MaskManager(object):
                 if sub_module.kernel_size[0] == 1:
                     pre_hook_cls = PreForwardHook(name, sub_module)
                     sub_module.register_forward_pre_hook(pre_hook_cls)
+                    self.name_module[name] = sub_module
 
             elif isinstance(sub_module, torch.nn.Linear):
                 pre_hook_cls = PreForwardHook(name, sub_module, dim=2)
                 sub_module.register_forward_pre_hook(pre_hook_cls)
+                self.name_module[name] = sub_module
+
+    def pruning_overview(self):
+        all_channel_num = 0
+        remained_channel_num = 0
+
+        for name in self.name_module:
+            channel_mask = self.name_module[name].mask.data
+            r = int(torch.sum(channel_mask).cpu())
+            a = int(channel_mask.shape[0])
+
+            all_channel_num += a
+            remained_channel_num += r
+
+        print('channel number: ', remained_channel_num, '/', all_channel_num)
