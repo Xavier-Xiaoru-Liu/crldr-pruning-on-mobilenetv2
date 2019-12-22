@@ -1,7 +1,7 @@
 run.sh
 test.sh
 pretrained/
-show.mat
+*.mat
 test.py
 ckp_for_pruning/
 logs/

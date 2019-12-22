@@ -58,7 +58,7 @@ parser.add_argument('--epochs', default=150, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=32, type=int,
+parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
@@ -143,7 +143,7 @@ def main():
         from xavier_lib import StatisticManager
         manager = StatisticManager()
         manager(model)
-    elif args.status == 'train':
+    elif args.status == 'train' or args.status == 'test':
         from xavier_lib import MaskManager
         manager = MaskManager()
         manager(model)
@@ -227,19 +227,20 @@ def main():
             # train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, 150)
             validate(val_loader, val_loader_len, model, criterion)
             manager.computer_score()
-            manager.prune(1500)
+            manager.prune(500)
             manager.pruning_overview()
             validate(val_loader, val_loader_len, model, criterion)
             torch.save(model.state_dict(), args.ckp_out)
         elif args.status == 'train':
             manager.pruning_overview()
-            for i in range(30):
-                train(train_loader, train_loader_len, model, criterion, optimizer, i * 5)
+            for i in range(1):
+                train(train_loader, train_loader_len, model, criterion, optimizer, 149 + i)
+                torch.save(model.state_dict(), args.ckp_out)
             validate(val_loader, val_loader_len, model, criterion)
             torch.save(model.state_dict(), args.ckp_out)
         elif args.status == 'test':
+            manager.pruning_overview()
             validate(val_loader, val_loader_len, model, criterion)
-
         return
 
     for epoch in range(args.start_epoch, args.epochs):
