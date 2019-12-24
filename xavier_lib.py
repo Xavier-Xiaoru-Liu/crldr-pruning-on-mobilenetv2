@@ -82,12 +82,6 @@ class InfoStruct(object):
         eig_value, eig_vec = torch.eig(self.grad_cov, eigenvectors=True)
 
         self.adjust_matrix = torch.mm(torch.diag(torch.sqrt(eig_value[:, 0])), eig_vec.t()).to(torch.float)
-        compare = torch.mm(torch.diag(torch.sqrt(eig_value[:, 0])), eig_vec.t())
-        print(self.f_cls.name)
-        print('var', torch.sign(torch.diag(self.forward_cov)))
-        vars = torch.abs(torch.sign(torch.diag(self.grad_cov)))
-        summm = torch.abs(torch.sign(self.grad_mean))
-        print('mask', vars+summm)
 
         self.pure_score = torch.sum(torch.pow(torch.squeeze(self.weight), 2), dim=0) * self.alpha
         self.sorted_alpha_index = torch.argsort(self.pure_score)
@@ -147,21 +141,6 @@ class InfoStruct(object):
         channel_mask[index_of_channel] = 0
         self.pre_f_cls.load_data(channel_mask)
 
-        # update [bn]
-        if self.f_cls.dim == 4:
-            connections = self.weight[:, index_of_channel, 0, 0]
-        else:
-            connections = self.weight[:, index_of_channel]
-        repair_base = connections * self.forward_mean[index_of_channel]
-
-        if self.bn_module is None:
-            print('Modify biases in', self.module)
-            self.module.bias.data -= repair_base
-        else:
-            self.bn_module.running_mean.data -= repair_base
-            repair_var = connections * self.variance[index_of_channel]
-            self.bn_module.running_var.data -= repair_var
-
         # update [weights]
         before_update = np.array(self.weight.cpu().detach())
 
@@ -186,6 +165,20 @@ class InfoStruct(object):
             raise Exception('save')
         new_weight = torch.mm(trans.t(), dezero_weight)
 
+        # update [bn]
+        vary_weight = torch.squeeze(self.weight) - new_weight
+
+        repair_base = torch.squeeze(torch.mm(vary_weight, self.forward_mean.view(-1, 1).to(torch.float)))
+
+        if self.bn_module is None:
+            # print('Modify biases in', self.module)
+            self.module.bias.data -= repair_base
+        else:
+            self.bn_module.running_mean.data -= repair_base
+            repair_var = torch.diag(torch.mm(torch.mm(vary_weight, self.forward_cov.to(torch.float)), vary_weight.t()))
+            self.bn_module.running_var.data -= repair_var
+
+        # update weights
         if self.f_cls.dim == 4:
             self.weight[:, :, 0, 0] = new_weight
         else:
@@ -218,6 +211,7 @@ class InfoStruct(object):
         return repaired_forward_cov, before_update, self.adjust_matrix
 
     def local_prune_then_modify(self, index_of_channel):
+        # ERROR!
         # update [mask]
         channel_mask = self.pre_f_cls.read_data()
         channel_mask[index_of_channel] = 0
